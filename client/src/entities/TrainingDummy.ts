@@ -11,7 +11,12 @@ export class TrainingDummy {
 
   constructor(private readonly scene: Phaser.Scene, x: number, y: number) {
     this.body = scene.physics.add.image(x, y, "dummy").setImmovable(true);
-    this.body.body?.setAllowGravity(false);
+    const physicsBody = this.body.body as Phaser.Physics.Arcade.Body;
+    physicsBody.setAllowGravity(false);
+    physicsBody.setSize(30, 42, true);
+    physicsBody.enable = true;
+
+    this.body.setData("hitRadius", 22);
 
     this.hpBarBg = scene.add.rectangle(x, y - 42, 56, 8, 0x111827).setDepth(4);
     this.hpBar = scene.add.rectangle(x - 28, y - 42, 56, 6, 0x22c55e).setOrigin(0, 0.5).setDepth(5);
@@ -39,9 +44,11 @@ export class TrainingDummy {
       repeat: 1
     });
 
-    const knock = new Phaser.Math.Vector2(this.body.x - sourceX, this.body.y - sourceY)
-      .normalize()
-      .scale(GAME_BALANCE.trainingDummy.knockbackForce);
+    const direction = new Phaser.Math.Vector2(this.body.x - sourceX, this.body.y - sourceY);
+    if (direction.lengthSq() < 0.001) {
+      direction.set(1, 0);
+    }
+    const knock = direction.normalize().scale(GAME_BALANCE.trainingDummy.knockbackForce);
     this.body.setVelocity(knock.x, knock.y);
 
     if (this.health <= 0) {
@@ -63,6 +70,11 @@ export class TrainingDummy {
       this.hpBar.displayWidth = 56;
       this.alive = true;
       this.body.enableBody(false, this.body.x, this.body.y, true, true);
+      const physicsBody = this.body.body as Phaser.Physics.Arcade.Body;
+      physicsBody.setAllowGravity(false);
+      physicsBody.setSize(30, 42, true);
+      physicsBody.enable = true;
+      this.body.setImmovable(true);
       this.body.setVelocity(0, 0);
       this.body.setAlpha(1);
     });

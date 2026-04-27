@@ -1,10 +1,12 @@
 import Phaser from "phaser";
 import { GAME_BALANCE } from "@xuanfight/shared";
-import { ProjectileManager } from "../combat/ProjectileManager";
+import { ProjectileManager, type ProjectileSprite } from "../combat/ProjectileManager";
 import { Player } from "../entities/Player";
 import { TrainingDummy } from "../entities/TrainingDummy";
 import { DamageText } from "../effects/DamageText";
 import { Hud } from "../ui/Hud";
+
+const DEBUG_HIT_LOG = true;
 
 export class MainScene extends Phaser.Scene {
   private cursors!: { [key: string]: Phaser.Input.Keyboard.Key };
@@ -33,7 +35,6 @@ export class MainScene extends Phaser.Scene {
 
     this.cursors = this.input.keyboard!.addKeys("W,A,S,D,Q,E") as { [key: string]: Phaser.Input.Keyboard.Key };
     this.registerInput();
-    this.setupCollisions();
 
     this.hud = new Hud(this);
     this.cameras.main.startFollow(this.player.body, true, 0.1, 0.1);
@@ -50,6 +51,7 @@ export class MainScene extends Phaser.Scene {
     this.player.update(delta, now);
     this.projectileManager.update();
     this.dummies.forEach((d) => d.update());
+    this.processProjectileHits();
 
     this.hud.render({
       health: this.player.health,
@@ -97,6 +99,50 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
+  private processProjectileHits() {
+    const projectiles = this.projectileManager.getActiveProjectiles();
+
+    projectiles.forEach((projectile) => {
+      const projectileRadius = (projectile.getData("hitRadius") as number) ?? 18;
+
+      for (const dummy of this.dummies) {
+        if (!dummy.alive || !projectile.active) continue;
+
+        const dummyRadius = (dummy.body.getData("hitRadius") as number) ?? 22;
+        const distance = Phaser.Math.Distance.Between(projectile.x, projectile.y, dummy.body.x, dummy.body.y);
+        const hitThreshold = projectileRadius + dummyRadius;
+
+        if (distance <= hitThreshold) {
+          this.applyProjectileHit(projectile, dummy);
+          break;
+        }
+      }
+    });
+  }
+
+  private applyProjectileHit(projectile: ProjectileSprite, dummy: TrainingDummy) {
+    this.projectileManager.destroyProjectile(projectile);
+
+    const damage = GAME_BALANCE.projectile.damage;
+    const killed = dummy.takeDamage(damage, this.player.body.x, this.player.body.y);
+    DamageText.spawn(this, dummy.body.x, dummy.body.y - 50, damage);
+
+    if (killed) this.killCount += 1;
+
+    if (DEBUG_HIT_LOG) {
+      // eslint-disable-next-line no-console
+      console.debug(`[hit] projectile -> dummy | dmg=${damage} killed=${killed} hp=${dummy.health}`);
+      const marker = this.add.circle(dummy.body.x, dummy.body.y, 10, 0xf87171, 0.45).setDepth(9);
+      this.tweens.add({
+        targets: marker,
+        alpha: 0,
+        scale: 2,
+        duration: 220,
+        onComplete: () => marker.destroy()
+      });
+    }
+  }
+
   private castBurst() {
     const skill = GAME_BALANCE.skills.burst;
     const aoe = this.add.circle(this.player.body.x, this.player.body.y, 12, 0xf59e0b, 0.45).setDepth(2);
@@ -116,21 +162,6 @@ export class MainScene extends Phaser.Scene {
         DamageText.spawn(this, dummy.body.x, dummy.body.y - 50, skill.damage);
         if (killed) this.killCount += 1;
       }
-    });
-  }
-
-  private setupCollisions() {
-    this.dummies.forEach((dummy) => {
-      this.physics.add.overlap(this.projectileManager.getGroup(), dummy.body, (projectileObj, bodyObj) => {
-        const projectile = projectileObj as Phaser.Types.Physics.Arcade.ImageWithDynamicBody;
-        const target = this.dummies.find((d) => d.body === bodyObj);
-        if (!target || !target.alive) return;
-
-        projectile.destroy();
-        const killed = target.takeDamage(GAME_BALANCE.projectile.damage, this.player.body.x, this.player.body.y);
-        DamageText.spawn(this, target.body.x, target.body.y - 50, GAME_BALANCE.projectile.damage);
-        if (killed) this.killCount += 1;
-      });
     });
   }
 
