@@ -10,17 +10,15 @@ export type CooldownState = {
 export class Player {
   readonly body: Phaser.Types.Physics.Arcade.ImageWithDynamicBody;
 
-  private readonly scene: Phaser.Scene;
   private readonly arrow: Phaser.GameObjects.Triangle;
   private readonly shieldRing: Phaser.GameObjects.Arc;
 
   readonly cooldowns: CooldownState = { sword: 0, shield: 0, burst: 0 };
-  mana = GAME_BALANCE.player.maxMana;
-  health = GAME_BALANCE.player.maxHealth;
+  mana: number = GAME_BALANCE.player.maxMana;
+  health: number = GAME_BALANCE.player.maxHealth;
   shieldEndAt = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    this.scene = scene;
     this.body = scene.physics.add.image(x, y, "cultivator").setCollideWorldBounds(true);
     this.body.setDamping(true).setDrag(0.92).setMaxVelocity(350, 350);
     this.arrow = scene.add.triangle(x, y, 0, 18, 14, -14, -14, -14, 0xfff7d6).setDepth(4);
@@ -34,11 +32,12 @@ export class Player {
     this.body.setVelocity(vec.x, vec.y);
   }
 
-  rotateTo(pointer: Phaser.Input.Pointer, camera: Phaser.Cameras.Scene2D.Camera) {
+  aimAt(pointer: Phaser.Input.Pointer, camera: Phaser.Cameras.Scene2D.Camera): number {
     const worldPoint = pointer.positionToCamera(camera) as Phaser.Math.Vector2;
     const angle = Phaser.Math.Angle.Between(this.body.x, this.body.y, worldPoint.x, worldPoint.y);
     this.arrow.setPosition(this.body.x, this.body.y);
     this.arrow.setRotation(angle + Math.PI / 2);
+    return angle;
   }
 
   activateShield(now: number) {
@@ -59,15 +58,5 @@ export class Player {
     } else if (this.shieldRing.visible) {
       this.shieldRing.setVisible(false);
     }
-  }
-
-  get shieldActive() {
-    return performance.now() < this.shieldEndAt;
-  }
-
-  destroy() {
-    this.body.destroy();
-    this.arrow.destroy();
-    this.shieldRing.destroy();
   }
 }

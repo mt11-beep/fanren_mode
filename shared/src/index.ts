@@ -6,7 +6,43 @@ export interface SkillConfig {
   costMana: number;
 }
 
-export const GAME_BALANCE = {
+export interface GameBalance {
+  player: {
+    maxHealth: number;
+    maxMana: number;
+    moveSpeed: number;
+    regenManaPerSecond: number;
+  };
+  projectile: {
+    speed: number;
+    lifetimeMs: number;
+    damage: number;
+    cooldownMs: number;
+    manaCost: number;
+    hitRadius: number;
+    spawnOffset: number;
+  };
+  trainingDummy: {
+    maxHealth: number;
+    respawnMs: number;
+    knockbackForce: number;
+    maxKnockbackSpeed: number;
+    hitRadius: number;
+  };
+  skills: {
+    shield: SkillConfig & {
+      durationMs: number;
+      absorbAmount: number;
+    };
+    burst: SkillConfig & {
+      radius: number;
+      damage: number;
+      knockbackScale: number;
+    };
+  };
+}
+
+export const GAME_BALANCE: GameBalance = {
   player: {
     maxHealth: 120,
     maxMana: 100,
@@ -14,16 +50,20 @@ export const GAME_BALANCE = {
     regenManaPerSecond: 8
   },
   projectile: {
-    speed: 540,
-    lifetimeMs: 1300,
+    speed: 660,
+    lifetimeMs: 1500,
     damage: 18,
     cooldownMs: 220,
-    manaCost: 6
+    manaCost: 6,
+    hitRadius: 18,
+    spawnOffset: 34
   },
   trainingDummy: {
     maxHealth: 100,
     respawnMs: 3000,
-    knockbackForce: 220
+    knockbackForce: 130,
+    maxKnockbackSpeed: 180,
+    hitRadius: 22
   },
   skills: {
     shield: {
@@ -38,9 +78,10 @@ export const GAME_BALANCE = {
       cooldownMs: 6500,
       costMana: 30,
       radius: 120,
-      damage: 28
+      damage: 28,
+      knockbackScale: 0.55
     }
   }
-} as const;
+};
 
 export type BalanceConfig = typeof GAME_BALANCE;

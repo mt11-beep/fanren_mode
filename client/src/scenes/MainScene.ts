@@ -7,6 +7,7 @@ import { DamageText } from "../effects/DamageText";
 import { Hud } from "../ui/Hud";
 
 const DEBUG_HIT_LOG = true;
+const WORLD_RECT = new Phaser.Geom.Rectangle(0, 0, 2200, 1400);
 
 export class MainScene extends Phaser.Scene {
   private cursors!: { [key: string]: Phaser.Input.Keyboard.Key };
@@ -16,6 +17,7 @@ export class MainScene extends Phaser.Scene {
 
   private dummies: TrainingDummy[] = [];
   private killCount = 0;
+  private aimAngle = 0;
 
   constructor() {
     super("main");
@@ -26,7 +28,7 @@ export class MainScene extends Phaser.Scene {
   }
 
   create() {
-    this.physics.world.setBounds(0, 0, 2200, 1400);
+    this.physics.world.setBounds(WORLD_RECT.x, WORLD_RECT.y, WORLD_RECT.width, WORLD_RECT.height);
     this.createRealmMap();
 
     this.player = new Player(this, 640, 360);
@@ -38,20 +40,20 @@ export class MainScene extends Phaser.Scene {
 
     this.hud = new Hud(this);
     this.cameras.main.startFollow(this.player.body, true, 0.1, 0.1);
-    this.cameras.main.setBounds(0, 0, 2200, 1400);
+    this.cameras.main.setBounds(WORLD_RECT.x, WORLD_RECT.y, WORLD_RECT.width, WORLD_RECT.height);
   }
 
   update(_time: number, delta: number) {
     const now = performance.now();
 
     this.player.move(this.cursors);
-    this.player.rotateTo(this.input.activePointer, this.cameras.main);
+    this.aimAngle = this.player.aimAt(this.input.activePointer, this.cameras.main);
     this.handleSkillInput(now);
 
     this.player.update(delta, now);
-    this.projectileManager.update();
-    this.dummies.forEach((d) => d.update());
-    this.processProjectileHits();
+    this.projectileManager.update(WORLD_RECT);
+    this.dummies.forEach((dummy) => dummy.update());
+    this.checkProjectileHits();
 
     this.hud.render({
       health: this.player.health,
@@ -74,9 +76,7 @@ export class MainScene extends Phaser.Scene {
       this.player.cooldowns.sword = now + GAME_BALANCE.projectile.cooldownMs;
       this.player.mana -= GAME_BALANCE.projectile.manaCost;
 
-      const wp = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
-      const angle = Phaser.Math.Angle.Between(this.player.body.x, this.player.body.y, wp.x, wp.y);
-      this.projectileManager.spawn(this.player.body.x, this.player.body.y, angle);
+      this.projectileManager.spawn(this.player.body.x, this.player.body.y, this.aimAngle);
     });
   }
 
@@ -99,7 +99,7 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  private processProjectileHits() {
+  private checkProjectileHits() {
     const projectiles = this.projectileManager.getActiveProjectiles();
 
     projectiles.forEach((projectile) => {
@@ -110,36 +110,27 @@ export class MainScene extends Phaser.Scene {
 
         const dummyRadius = (dummy.body.getData("hitRadius") as number) ?? 22;
         const distance = Phaser.Math.Distance.Between(projectile.x, projectile.y, dummy.body.x, dummy.body.y);
-        const hitThreshold = projectileRadius + dummyRadius;
 
-        if (distance <= hitThreshold) {
-          this.applyProjectileHit(projectile, dummy);
+        if (distance <= projectileRadius + dummyRadius) {
+          this.onProjectileHitDummy(projectile, dummy);
           break;
         }
       }
     });
   }
 
-  private applyProjectileHit(projectile: ProjectileSprite, dummy: TrainingDummy) {
+  private onProjectileHitDummy(projectile: ProjectileSprite, dummy: TrainingDummy) {
     this.projectileManager.destroyProjectile(projectile);
 
     const damage = GAME_BALANCE.projectile.damage;
-    const killed = dummy.takeDamage(damage, this.player.body.x, this.player.body.y);
+    const killed = dummy.takeDamage(damage, projectile.x, projectile.y, 1);
     DamageText.spawn(this, dummy.body.x, dummy.body.y - 50, damage);
 
     if (killed) this.killCount += 1;
 
     if (DEBUG_HIT_LOG) {
       // eslint-disable-next-line no-console
-      console.debug(`[hit] projectile -> dummy | dmg=${damage} killed=${killed} hp=${dummy.health}`);
-      const marker = this.add.circle(dummy.body.x, dummy.body.y, 10, 0xf87171, 0.45).setDepth(9);
-      this.tweens.add({
-        targets: marker,
-        alpha: 0,
-        scale: 2,
-        duration: 220,
-        onComplete: () => marker.destroy()
-      });
+      console.debug("[combat] sword hit dummy", { damage, killed, hp: dummy.health });
     }
   }
 
@@ -158,7 +149,7 @@ export class MainScene extends Phaser.Scene {
       if (!dummy.alive) return;
       const dist = Phaser.Math.Distance.Between(this.player.body.x, this.player.body.y, dummy.body.x, dummy.body.y);
       if (dist <= skill.radius) {
-        const killed = dummy.takeDamage(skill.damage, this.player.body.x, this.player.body.y);
+        const killed = dummy.takeDamage(skill.damage, this.player.body.x, this.player.body.y, skill.knockbackScale);
         DamageText.spawn(this, dummy.body.x, dummy.body.y - 50, skill.damage);
         if (killed) this.killCount += 1;
       }
@@ -187,6 +178,8 @@ export class MainScene extends Phaser.Scene {
     this.add.ellipse(780, 460, 440, 250, 0x0ea5e9, 0.35);
     this.add.ellipse(1520, 930, 520, 310, 0x0891b2, 0.35);
 
+    this.add.rectangle(1100, 700, 2200, 1400).setStrokeStyle(6, 0xfde68a, 0.8);
+
     this.add
       .text(80, 110, "玄灵秘境（训练场）", {
         fontFamily: "sans-serif",
@@ -211,9 +204,11 @@ export class MainScene extends Phaser.Scene {
     g.generateTexture("dummy", 34, 56);
     g.clear();
 
-    g.fillStyle(0xf8fafc, 1);
-    g.fillTriangle(12, 0, 24, 32, 0, 32);
-    g.generateTexture("sword", 24, 32);
+    g.fillStyle(0xdbeafe, 1);
+    g.fillTriangle(10, 0, 20, 30, 0, 30);
+    g.lineStyle(2, 0x93c5fd, 1);
+    g.strokeTriangle(10, 0, 20, 30, 0, 30);
+    g.generateTexture("sword", 20, 30);
 
     g.destroy();
   }
