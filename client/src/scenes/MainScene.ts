@@ -19,6 +19,11 @@ export class MainScene extends Phaser.Scene {
   private killCount = 0;
   private aimAngle = 0;
 
+  private comboCount = 0;
+  private comboExpiresAt = 0;
+  private combatLogs: string[] = [];
+  private paused = false;
+
   constructor() {
     super("main");
   }
@@ -38,7 +43,12 @@ export class MainScene extends Phaser.Scene {
     this.cursors = this.input.keyboard!.addKeys("W,A,S,D,Q,E") as { [key: string]: Phaser.Input.Keyboard.Key };
     this.registerInput();
 
-    this.hud = new Hud(this);
+    this.hud = new Hud(this, {
+      onTogglePause: () => this.togglePause(),
+      onResetArena: () => this.resetArena()
+    });
+    this.hud.setCombatLogs(["训练开始"]);
+
     this.cameras.main.startFollow(this.player.body, true, 0.1, 0.1);
     this.cameras.main.setBounds(WORLD_RECT.x, WORLD_RECT.y, WORLD_RECT.width, WORLD_RECT.height);
   }
@@ -46,27 +56,36 @@ export class MainScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     const now = performance.now();
 
-    this.player.move(this.cursors);
     this.aimAngle = this.player.aimAt(this.input.activePointer, this.cameras.main);
-    this.handleSkillInput(now);
 
-    this.player.update(delta, now);
-    this.projectileManager.update(WORLD_RECT);
-    this.dummies.forEach((dummy) => dummy.update());
-    this.checkProjectileHits();
+    if (!this.paused) {
+      this.player.move(this.cursors);
+      this.handleSkillInput(now);
+
+      this.player.update(delta, now);
+      this.projectileManager.update(WORLD_RECT);
+      this.dummies.forEach((dummy) => dummy.update());
+      this.checkProjectileHits();
+
+      if (now > this.comboExpiresAt) {
+        this.comboCount = 0;
+      }
+    }
 
     this.hud.render({
       health: this.player.health,
       mana: this.player.mana,
       cooldowns: this.player.cooldowns,
       kills: this.killCount,
-      shieldEndAt: this.player.shieldEndAt
+      shieldEndAt: this.player.shieldEndAt,
+      comboCount: this.comboCount,
+      paused: this.paused
     });
   }
 
   private registerInput() {
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      if (!pointer.leftButtonDown()) return;
+      if (this.paused || !pointer.leftButtonDown()) return;
 
       const now = performance.now();
       if (now < this.player.cooldowns.sword || this.player.mana < GAME_BALANCE.projectile.manaCost) {
@@ -111,26 +130,39 @@ export class MainScene extends Phaser.Scene {
         const dummyRadius = (dummy.body.getData("hitRadius") as number) ?? 22;
         const distance = Phaser.Math.Distance.Between(projectile.x, projectile.y, dummy.body.x, dummy.body.y);
 
-        if (distance <= projectileRadius + dummyRadius) {
-          this.onProjectileHitDummy(projectile, dummy);
+        if (distance <= Math.max(40, projectileRadius + dummyRadius)) {
+          this.projectileManager.destroyProjectile(projectile);
+          this.applyDamageToDummy(dummy, GAME_BALANCE.projectile.damage, projectile.x, projectile.y, 1, "飞剑");
           break;
         }
       }
     });
   }
 
-  private onProjectileHitDummy(projectile: ProjectileSprite, dummy: TrainingDummy) {
-    this.projectileManager.destroyProjectile(projectile);
-
-    const damage = GAME_BALANCE.projectile.damage;
-    const killed = dummy.takeDamage(damage, projectile.x, projectile.y, 1);
+  private applyDamageToDummy(
+    dummy: TrainingDummy,
+    damage: number,
+    sourceX: number,
+    sourceY: number,
+    knockbackScale: number,
+    sourceLabel: "飞剑" | "震荡术"
+  ) {
+    const killed = dummy.takeDamage(damage, sourceX, sourceY, knockbackScale);
     DamageText.spawn(this, dummy.body.x, dummy.body.y - 50, damage);
 
-    if (killed) this.killCount += 1;
+    this.comboCount += 1;
+    this.comboExpiresAt = performance.now() + 1600;
+
+    this.pushCombatLog(`${sourceLabel}命中训练假人 -${damage}`);
+
+    if (killed) {
+      this.killCount += 1;
+      this.pushCombatLog("击败训练假人");
+    }
 
     if (DEBUG_HIT_LOG) {
       // eslint-disable-next-line no-console
-      console.debug("[combat] sword hit dummy", { damage, killed, hp: dummy.health });
+      console.debug("[combat] hit dummy", { sourceLabel, damage, killed, hp: dummy.health });
     }
   }
 
@@ -149,9 +181,14 @@ export class MainScene extends Phaser.Scene {
       if (!dummy.alive) return;
       const dist = Phaser.Math.Distance.Between(this.player.body.x, this.player.body.y, dummy.body.x, dummy.body.y);
       if (dist <= skill.radius) {
-        const killed = dummy.takeDamage(skill.damage, this.player.body.x, this.player.body.y, skill.knockbackScale);
-        DamageText.spawn(this, dummy.body.x, dummy.body.y - 50, skill.damage);
-        if (killed) this.killCount += 1;
+        this.applyDamageToDummy(
+          dummy,
+          skill.damage,
+          this.player.body.x,
+          this.player.body.y,
+          skill.knockbackScale,
+          "震荡术"
+        );
       }
     });
   }
@@ -163,6 +200,28 @@ export class MainScene extends Phaser.Scene {
       { x: 1720, y: 980 }
     ];
     this.dummies = points.map((p) => new TrainingDummy(this, p.x, p.y));
+  }
+
+  private pushCombatLog(message: string) {
+    this.combatLogs.unshift(message);
+    this.combatLogs = this.combatLogs.slice(0, 6);
+    this.hud.setCombatLogs(this.combatLogs);
+  }
+
+  private togglePause() {
+    this.paused = !this.paused;
+    this.pushCombatLog(this.paused ? "训练已暂停" : "训练继续");
+  }
+
+  private resetArena() {
+    this.killCount = 0;
+    this.comboCount = 0;
+    this.comboExpiresAt = 0;
+
+    this.projectileManager.clearAll();
+    this.dummies.forEach((dummy) => dummy.resetToSpawn());
+
+    this.pushCombatLog("训练场已重置");
   }
 
   private createRealmMap() {

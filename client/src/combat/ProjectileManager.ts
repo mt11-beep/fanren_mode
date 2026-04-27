@@ -34,18 +34,19 @@ export class ProjectileManager {
 
     sword.setData("expireAt", performance.now() + GAME_BALANCE.projectile.lifetimeMs);
     sword.setData("hitRadius", GAME_BALANCE.projectile.hitRadius);
+    sword.setData("trailTick", 0);
     this.group.add(sword);
 
     return sword;
   }
 
-  spawnTrail(projectile: ProjectileSprite) {
-    const trail = this.scene.add.circle(projectile.x, projectile.y, 4, 0xbfdbfe, 0.5).setDepth(5);
+  private spawnTrail(projectile: ProjectileSprite) {
+    const trail = this.scene.add.circle(projectile.x, projectile.y, 4, 0xbfdbfe, 0.45).setDepth(5);
     this.scene.tweens.add({
       targets: trail,
       alpha: 0,
       scale: 0.6,
-      duration: 240,
+      duration: 220,
       onComplete: () => trail.destroy()
     });
   }
@@ -57,8 +58,12 @@ export class ProjectileManager {
       .filter((projectile) => projectile.active && projectile.visible);
   }
 
+  clearAll() {
+    this.getActiveProjectiles().forEach((p) => this.destroyProjectile(p));
+  }
+
   destroyProjectile(projectile: ProjectileSprite) {
-    if (!projectile.active) return;
+    if (!projectile || !projectile.active) return;
     projectile.disableBody(true, true);
     projectile.destroy();
   }
@@ -69,7 +74,11 @@ export class ProjectileManager {
       const projectile = obj as ProjectileSprite;
       if (!projectile.active) return true;
 
-      this.spawnTrail(projectile);
+      const trailTick = (projectile.getData("trailTick") as number) + 1;
+      projectile.setData("trailTick", trailTick);
+      if (trailTick % 2 === 0) {
+        this.spawnTrail(projectile);
+      }
 
       const expired = (projectile.getData("expireAt") as number) <= now;
       const outOfBounds = !worldBounds.contains(projectile.x, projectile.y);

@@ -10,6 +10,7 @@ export class TrainingDummy {
   readonly body: Phaser.Types.Physics.Arcade.ImageWithDynamicBody;
   readonly spawnX: number;
   readonly spawnY: number;
+  readonly maxHealth: number = GAME_BALANCE.trainingDummy.maxHealth;
 
   private readonly hpBarBg: Phaser.GameObjects.Rectangle;
   private readonly hpBar: Phaser.GameObjects.Rectangle;
@@ -47,12 +48,29 @@ export class TrainingDummy {
     this.hpBar.setVisible(this.alive);
   }
 
+  resetToSpawn() {
+    this.health = this.maxHealth;
+    this.alive = true;
+    this.hpBar.displayWidth = 56;
+    this.body.enableBody(false, this.spawnX, this.spawnY, true, true);
+    const physicsBody = this.body.body as Phaser.Physics.Arcade.Body;
+    physicsBody.setAllowGravity(false);
+    physicsBody.setSize(34, 56, true);
+    physicsBody.setDamping(true);
+    physicsBody.setDrag(0.95);
+    physicsBody.enable = true;
+    this.body.setVelocity(0, 0);
+    this.body.setAlpha(1);
+    this.body.setCollideWorldBounds(true);
+
+    this.playRespawnEffect();
+  }
+
   takeDamage(damage: number, sourceX: number, sourceY: number, knockbackScale = 1): boolean {
     if (!this.alive) return false;
 
     this.health = Math.max(0, this.health - damage);
-    const ratio = this.health / GAME_BALANCE.trainingDummy.maxHealth;
-    this.hpBar.displayWidth = 56 * ratio;
+    this.hpBar.displayWidth = 56 * (this.health / this.maxHealth);
 
     this.scene.tweens.add({
       targets: this.body,
@@ -84,26 +102,35 @@ export class TrainingDummy {
 
   private dieAndRespawn() {
     this.alive = false;
+    this.playDeathEffect();
     this.body.disableBody(true, true);
     this.hpBar.setVisible(false);
     this.hpBarBg.setVisible(false);
 
     this.scene.time.delayedCall(GAME_BALANCE.trainingDummy.respawnMs, () => {
-      this.health = GAME_BALANCE.trainingDummy.maxHealth;
-      this.hpBar.displayWidth = 56;
-      this.alive = true;
+      this.resetToSpawn();
+    });
+  }
 
-      this.body.enableBody(false, this.spawnX, this.spawnY, true, true);
-      const physicsBody = this.body.body as Phaser.Physics.Arcade.Body;
-      physicsBody.setAllowGravity(false);
-      physicsBody.setSize(34, 56, true);
-      physicsBody.setDamping(true);
-      physicsBody.setDrag(0.95);
-      physicsBody.enable = true;
+  private playDeathEffect() {
+    const fx = this.scene.add.circle(this.body.x, this.body.y, 12, 0xf97316, 0.55).setDepth(7);
+    this.scene.tweens.add({
+      targets: fx,
+      radius: 48,
+      alpha: 0,
+      duration: 260,
+      onComplete: () => fx.destroy()
+    });
+  }
 
-      this.body.setVelocity(0, 0);
-      this.body.setAlpha(1);
-      this.body.setCollideWorldBounds(true);
+  private playRespawnEffect() {
+    const halo = this.scene.add.circle(this.spawnX, this.spawnY, 18, 0x93c5fd, 0.4).setDepth(7);
+    this.scene.tweens.add({
+      targets: halo,
+      radius: 42,
+      alpha: 0,
+      duration: 420,
+      onComplete: () => halo.destroy()
     });
   }
 }
