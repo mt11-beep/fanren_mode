@@ -10,8 +10,8 @@ export class MainScene extends Phaser.Scene {
   private hud!: Hud;
   private playerArrow!: Phaser.GameObjects.Triangle;
 
-  private health = GAME_BALANCE.player.maxHealth;
-  private mana = GAME_BALANCE.player.maxMana;
+  private health: number = GAME_BALANCE.player.maxHealth;
+  private mana: number = GAME_BALANCE.player.maxMana;
   private cooldowns: SkillCd = { sword: 0, shield: 0, burst: 0 };
   private shieldEndAt = 0;
 
