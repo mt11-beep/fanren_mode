@@ -20,6 +20,11 @@ export const GAME_BALANCE = {
     cooldownMs: 220,
     manaCost: 6
   },
+  trainingDummy: {
+    maxHealth: 100,
+    respawnMs: 3000,
+    knockbackForce: 220
+  },
   skills: {
     shield: {
       key: "shield",
